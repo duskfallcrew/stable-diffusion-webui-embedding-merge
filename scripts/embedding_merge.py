@@ -37,7 +37,10 @@ import modules
 from modules import shared, scripts, script_callbacks, devices, processing, sd_models
 from modules.shared import opts, cmd_opts
 from modules.textual_inversion.textual_inversion import Embedding
-import open_clip.tokenizer
+try:
+    import open_clip.tokenizer
+except ImportError:
+    open_clip = None  # Forge/NEO handles CLIP internally; skip if unavailable
 
 
 def _webui_embedding_merge_():
