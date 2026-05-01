@@ -1644,14 +1644,9 @@ def get_embedding_db():
                 setattr(p,'em_orig_cached_params',orig)
                 setattr(p,'cached_params',types.MethodType(fake_cached_params,p))
 try:
-    # Forge NEO compatibility: sd_hijack was removed
-    try:
-        from modules import sd_hijack
+    from modules import sd_hijack
+    cls = sd_hijack.StableDiffusionModelHijack
 
-        cls = sd_hijack.StableDiffusionModelHijack
-    except ImportError:
-        # Skip hooking on Forge NEO — prompt parsing handled differently
-        return
     get_prompt_lengths = cls.get_prompt_lengths
     field = "__embedding_merge_wrapper"
 
@@ -1669,6 +1664,9 @@ try:
         get_prompt_lengths = getattr(get_prompt_lengths, field)
     setattr(hook_prompt_lengths, field, get_prompt_lengths)
     cls.get_prompt_lengths = hook_prompt_lengths
+except ImportError:
+    # Forge NEO: sd_hijack removed, skip prompt-length hook safely
+    pass
 except Exception:
     traceback.print_exc()
 
