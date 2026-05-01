@@ -382,15 +382,23 @@ A cat is chasing a dog. <''-'road'-'grass'>
                 pass
         return (clip,) # SD1 or SD2
 
-    def get_embedding_db():
+def get_embedding_db():
+    try:
+        from modules import sd_hijack
+
+        db = sd_hijack.model_hijack.embedding_db
+        if db is not None:
+            return (db,)
+    except (ImportError, AttributeError):
+        # Forge NEO: fallback to native textual_inversion module
         try:
-            db = modules.sd_hijack.model_hijack.embedding_db
-            if db is not None:
-                return (db,)
-        except:
+            from modules.textual_inversion import embedding_db as ti_db
+
+            return (ti_db,)
+        except ImportError:
             pass
-        clips = get_model_clips()
-        return [c.embeddings for c in clips]
+    clips = get_model_clips()
+    return [getattr(c, "embeddings", None) for c in clips if hasattr(c, "embeddings")]
 
     def tokenize_line(clip,text):
         if hasattr(clip,'encode_embedding_init_text'):
@@ -1635,24 +1643,34 @@ A cat is chasing a dog. <''-'road'-'grass'>
             if orig is not None:
                 setattr(p,'em_orig_cached_params',orig)
                 setattr(p,'cached_params',types.MethodType(fake_cached_params,p))
-
+try:
+    # Forge NEO compatibility: sd_hijack was removed
     try:
-        cls = modules.sd_hijack.StableDiffusionModelHijack
-        get_prompt_lengths = cls.get_prompt_lengths
-        field = '__embedding_merge_wrapper'
-        def hook_prompt_lengths(self,text,*ar,**kw):
-            if text.find("<'")<0 and text.find("{'")<0:
-                return get_prompt_lengths(self,text,*ar,**kw)
-            (res,err) = merge_one_prompt(grab_embedding_cache(),None,{},None,text,True,True)
-            if err is not None:
-                return -1,-1
-            return get_prompt_lengths(self,res,*ar,**kw)
-        if hasattr(get_prompt_lengths,field):
-            get_prompt_lengths = getattr(get_prompt_lengths,field)
-        setattr(hook_prompt_lengths,field,get_prompt_lengths)
-        cls.get_prompt_lengths = hook_prompt_lengths
-    except:
-        traceback.print_exc()
+        from modules import sd_hijack
+
+        cls = sd_hijack.StableDiffusionModelHijack
+    except ImportError:
+        # Skip hooking on Forge NEO — prompt parsing handled differently
+        return
+    get_prompt_lengths = cls.get_prompt_lengths
+    field = "__embedding_merge_wrapper"
+
+    def hook_prompt_lengths(self, text, *ar, **kw):
+        if text.find("<'") < 0 and text.find("{'") < 0:
+            return get_prompt_lengths(self, text, *ar, **kw)
+        (res, err) = merge_one_prompt(
+            grab_embedding_cache(), None, {}, None, text, True, True
+        )
+        if err is not None:
+            return -1, -1
+        return get_prompt_lengths(self, res, *ar, **kw)
+
+    if hasattr(get_prompt_lengths, field):
+        get_prompt_lengths = getattr(get_prompt_lengths, field)
+    setattr(hook_prompt_lengths, field, get_prompt_lengths)
+    cls.get_prompt_lengths = hook_prompt_lengths
+except Exception:
+    traceback.print_exc()
 
     def on_infotext_pasted(infotext,result):
         if 'EmbeddingMerge' in result:
